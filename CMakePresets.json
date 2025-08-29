@@ -1,0 +1,27 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "linux",
+      "displayName": "Pico SDK on Linux",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux",
+      "toolchainFile": "${sourceDir}/cmake/pico_toolchain.cmake",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "linux",
+      "configurePreset": "linux",
+      "displayName": "Build on Linux"
+    }
+  ]
+}
