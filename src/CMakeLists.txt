@@ -1,4 +1,4 @@
-set(NAME tank_sim_core)
+set(NAME tank_sim_core.elf)
 
 add_subdirectory(pico_sdk)
 
@@ -28,3 +28,5 @@ target_link_libraries(${NAME}
         pico_stdlib
         hardware_exception
 )
+
+pico_add_extra_outputs(${NAME})
