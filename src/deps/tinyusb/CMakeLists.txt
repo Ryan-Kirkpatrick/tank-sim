@@ -1,0 +1,5 @@
+SET(TINYUSB_INC
+    ${CMAKE_CURRENT_LIST_DIR}/config
+
+    PARENT_SCOPE
+)

@@ -1,26 +1,19 @@
+# External Dependencies
+add_subdirectory(deps)
+
+# Main Project
 set(NAME tank_sim_core.elf)
 
-add_subdirectory(pico_sdk)
-
-add_subdirectory(freertos)
-
-
-set(FREERTOS_PORT GCC_RP2040)
-
-
-set(SOURCES
+add_executable(${NAME} 
     main.c
     usb_descriptors.c
     ${FREERTOS_SRC}
 )
 
-
-add_executable(${NAME} ${SOURCES})
-
 target_include_directories(${NAME} 
     PUBLIC
         ${FREERTOS_INC}
-        tinyusb/config
+        ${TINYUSB_INC}
 )
 
 target_link_libraries(${NAME}
