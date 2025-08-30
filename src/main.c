@@ -1,15 +1,19 @@
 #include "FreeRTOS.h"
 #include "class/hid/hid_device.h"
 #include "device/usbd.h"
-#include "hardware/exception.h"
 #include "hardware/adc.h"
+#include "hardware/exception.h"
 #include "portmacro.h"
 #include "projdefs.h"
+#include "reporter.h"
 #include "task.h"
 
 #include <pico/time.h>
 #include "pico/stdlib.h"
 #include "tusb.h"
+
+#include "pins.h"
+#include "usb.h"
 
 #define STACK_SIZE 1024 * 8
 
@@ -31,7 +35,6 @@ void send_key(uint8_t keycode) {
     tud_hid_keyboard_report(0, 0, report);
 }
 
-
 const uint32_t max_delay = 500;
 volatile uint32_t delay = max_delay;
 
@@ -49,9 +52,9 @@ void led_task(void* unused) {
 
 void pot_task(void* unused) {
     adc_init();
-    adc_gpio_init(POT_PIN);
+    adc_gpio_init(POTENTIOMETER_PIN);
     adc_select_input(0);
-    
+
     while (1) {
         uint16_t raw = adc_read();
         delay = max_delay - ((raw * max_delay) / 4095);
@@ -59,37 +62,48 @@ void pot_task(void* unused) {
     }
 }
 
-void usb_task(void* unused) {
-    tusb_init();
-
-    TickType_t next = 0;
-
-    while (1) {
-        tud_task();
-        if (tud_hid_ready()) {
-            // send_key(0x04);
-        }
-        vTaskDelay(pdMS_TO_TICKS(200));
-
-        tud_task();
-        if (tud_hid_ready()) {
-            // send_key(0x00);
-        }
-        vTaskDelay(pdMS_TO_TICKS(200));
-    }
-}
-
 int main(void) {
-    // Init GPIO
+    usb_init();
+    reporter_init(pdTICKS_TO_MS(100));
 
+    reporter_report_t report = {.forward_duty_cycle = 0.9,
+                                .left_duty_cycle = 0.50,
+                                .right_duty_cycle = 0.25,
+                                .reverse_duty_cycle = 0,
+                                .hand_brake = false};
 
-    // Start tasks
+    reporter_set_report(&report);
 
-    xTaskCreateStatic(led_task, "", STACK_SIZE, NULL, 1, led_task_stack, &led_task_handle);
-    xTaskCreateStatic(usb_task, "", STACK_SIZE, NULL, 2, usb_task_stack, &usb_task_handle);
-    xTaskCreateStatic(pot_task, "", STACK_SIZE, NULL, 1, pot_task_stack, &pot_task_handle);
+    usb_start(1, 1);
+    reporter_start(3, 15);
+
+    xTaskCreateStatic(led_task, "", STACK_SIZE, NULL, 2, led_task_stack, &led_task_handle);
+    xTaskCreateStatic(pot_task, "", STACK_SIZE, NULL, 2, pot_task_stack, &pot_task_handle);
     vTaskStartScheduler();
 
+    // tusb_init();
+
+    // int i = 0;
+
+    // while (1) {
+    //     // TinyUSB background tasks
+    //     tud_task();
+
+    //     // Check if device is ready to send HID reports
+    //     if (tud_hid_ready()) {
+    //         // HID keyboard report: modifiers=0, keys[6]={space}, rest zero
+    //         uint8_t keycode[6] = {0x2C, 0, 0, 0, 0, 0};  // 0x2C = space
+
+    //         if (i % 100 == 0) {
+    //             keycode[0] = 0x00;
+    //         }
+
+    //         // Send keyboard report (interface 0)
+    //         tud_hid_keyboard_report(0, 0, keycode);
+
+    //         i++;
+    //     }
+    // }
 }
 
 void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer,
@@ -119,5 +133,3 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
 //     static uint8_t const report[] = {TUD_HID_REPORT_DESC_KEYBOARD()};
 //     return report;
 // }
-
-

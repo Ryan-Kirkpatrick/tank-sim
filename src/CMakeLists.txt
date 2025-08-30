@@ -6,6 +6,8 @@ set(NAME tank_sim_core.elf)
 
 add_executable(${NAME} 
     main.c
+    reporter.c
+    usb.c
     usb_descriptors.c
     ${FREERTOS_SRC}
 )
