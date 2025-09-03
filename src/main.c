@@ -8,10 +8,17 @@
 #include "reporter.h"
 #include "task.h"
 
+#include <hardware/gpio.h>
+#include <hardware/structs/io_bank0.h>
+#include <hardware/uart.h>
+#include <pico/stdio.h>
 #include <pico/time.h>
+#include <stdint.h>
+#include <stdio.h>
 #include "pico/stdlib.h"
 #include "tusb.h"
 
+#include "hx710c.h"
 #include "pins.h"
 #include "usb.h"
 
@@ -19,6 +26,14 @@
 
 #define LED_PIN 25
 #define POT_PIN 26
+#define LEVER_SCL_PIN 21
+#define LEVER_1_SDA_PIN 20
+#define LEVER_2_SDA_PIN 19
+
+#define STDIO_UART_ID uart0
+#define STDIO_UART_BAUD_RATE 115200
+#define STDIO_UART_TX_PIN 0
+#define STDIO_UART_RX_PIN 1
 
 StackType_t led_task_stack[STACK_SIZE];
 StaticTask_t led_task_handle;
@@ -35,7 +50,7 @@ void send_key(uint8_t keycode) {
     tud_hid_keyboard_report(0, 0, report);
 }
 
-const uint32_t max_delay = 500;
+const uint32_t max_delay = 2000;
 volatile uint32_t delay = max_delay;
 
 void led_task(void* unused) {
@@ -55,14 +70,48 @@ void pot_task(void* unused) {
     adc_gpio_init(POTENTIOMETER_PIN);
     adc_select_input(0);
 
+    hx710c_t force_sensors;
+    const uint8_t force_sensor_sda_pins[] = {
+        LEVER_1_SDA_PIN,
+        LEVER_2_SDA_PIN,
+    };
+
+    vTaskSuspendAll();
+    hx710c_init(&force_sensors, LEVER_SCL_PIN, force_sensor_sda_pins, 2);
+    xTaskResumeAll();
+
     while (1) {
         uint16_t raw = adc_read();
         delay = max_delay - ((raw * max_delay) / 4095);
-        vTaskDelay(pdMS_TO_TICKS(5));
+
+        uint32_t conversions[2] = {0};
+        vTaskSuspendAll();
+        bool conversion_ready = hx710c_read(&force_sensors, conversions);
+        xTaskResumeAll();
+
+        printf("=== [Conversion result] === \r\n");
+        if (conversion_ready) {
+            printf("Conversion 1: %d\r\n", conversions[0]);
+            printf("Conversion 2: %d\r\n", conversions[1]);
+        } else {
+            printf("Conversion was not ready.\r\n");    
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(delay));
     }
 }
 
 int main(void) {
+    // Init uart
+    gpio_set_function(STDIO_UART_TX_PIN, GPIO_FUNC_UART);
+    gpio_set_function(STDIO_UART_RX_PIN, GPIO_FUNC_UART);
+
+    uart_init(STDIO_UART_ID, STDIO_UART_BAUD_RATE);
+    uart_set_format(STDIO_UART_ID, 8, 1, UART_PARITY_NONE);
+
+    // Stdio
+    stdio_init_all();
+
     usb_init();
     reporter_init(pdTICKS_TO_MS(100));
 

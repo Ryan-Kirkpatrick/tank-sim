@@ -9,6 +9,7 @@ add_executable(${NAME}
     reporter.c
     usb.c
     usb_descriptors.c
+    hx710c.c
     ${FREERTOS_SRC}
 )
 
@@ -29,3 +30,5 @@ target_link_libraries(${NAME}
 )
 
 pico_add_extra_outputs(${NAME})
+pico_enable_stdio_usb(${NAME} 0)
+pico_enable_stdio_uart(${NAME} 1)
