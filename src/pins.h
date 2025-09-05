@@ -20,7 +20,7 @@
 #define RIGHT_TILLER_SDA_PIN 20
 #define TILLER_SCL_PIN 21
 
-// Calibration swicth
+// Calibration switch
 #define CALIBRATION_SWITCH_PIN 15
 
 // Engine on/off switch

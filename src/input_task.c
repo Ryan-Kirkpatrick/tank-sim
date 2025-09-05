@@ -14,7 +14,7 @@
 #include "task.h"
 
 // Stack info
-#define INPUT_TASK_STACK_SIZE 1024 / sizeof(StackType_t)
+#define INPUT_TASK_STACK_SIZE 4096 / sizeof(StackType_t)
 static StackType_t input_task_stack[INPUT_TASK_STACK_SIZE];
 static StaticTask_t input_task_control_block;
 
@@ -61,7 +61,7 @@ static input_raw_report_t input_task_read_sensors(void) {
     input_raw_report_t report = {0};
 
     // Read force sensors
-    int32_t conversions[2] = {0};
+    uint32_t conversions[2] = {0};
     vTaskSuspendAll();
     bool conversion_ready = hx710c_read(&input_force_sensors, conversions);
     xTaskResumeAll();
@@ -158,6 +158,16 @@ static input_report_t input_make_report(const input_raw_report_t* current, const
 static void input_task(void* unused) {
     TickType_t wake_time = xTaskGetTickCount();
 
+    // Set up force sensors
+    // Setup force sensors
+    const uint8_t force_sensor_sda_pins[] = {
+        LEFT_TILLER_SDA_PIN,
+        RIGHT_TILLER_SDA_PIN,
+    };
+    vTaskSuspendAll();
+    hx710c_init(&input_force_sensors, TILLER_SCL_PIN, force_sensor_sda_pins, 2);
+    xTaskResumeAll();
+
     const input_raw_report_t default_report = {
         .accelerator = INPUT_RAW_PEDAL_ABSOLUTE_MAX,  //
         .brake = INPUT_RAW_PEDAL_ABSOLUTE_MAX,        //
@@ -206,15 +216,6 @@ void input_task_start(UBaseType_t priority, TickType_t interval) {
 }
 
 void input_task_init(void) {
-    // Setup force sensors
-    const uint8_t force_sensor_sda_pins[] = {
-        LEFT_TILLER_SDA_PIN,
-        RIGHT_TILLER_SDA_PIN,
-    };
-    vTaskSuspendAll();
-    hx710c_init(&input_force_sensors, TILLER_SCL_PIN, force_sensor_sda_pins, 2);
-    xTaskResumeAll();
-
     // Setup pedals
     adc_init();
     adc_gpio_init(ACCELERATOR_PEDAL_PIN);
