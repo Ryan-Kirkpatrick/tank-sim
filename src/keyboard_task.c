@@ -1,9 +1,12 @@
-#include "reporter.h"
+#include "keyboard_task.h"
+
+#include <hardware/gpio.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 #include "FreeRTOS.h"
 #include "class/hid/hid_device.h"
+#include "pins.h"
 #include "portmacro.h"
 #include "projdefs.h"
 #include "queue.h"
@@ -11,38 +14,48 @@
 #include "task.h"
 
 // Task
-#define reporter_TASK_STACK_SIZE 1024 / sizeof(StackType_t)
-static StackType_t reporter_task_stack[reporter_TASK_STACK_SIZE];
+#define KEYBOARD_TASK_STACK_SIZE 1024 / sizeof(StackType_t)
+static StackType_t reporter_task_stack[KEYBOARD_TASK_STACK_SIZE];
 static StaticTask_t reporter_task_control_block;
 TickType_t reporter_interval = 0;
 
 // Queue
 static QueueHandle_t reporter_queue_handle;
 static StaticQueue_t reporter_queue_control_block;
-static uint8_t queue_storage[sizeof(reporter_report_t)];
+static uint8_t queue_storage[sizeof(keyboard_output_t)];
 
 // Report
-static reporter_report_t reporter_report = {.forward_duty_cycle = 0,
-                                            .left_duty_cycle = 0,
-                                            .right_duty_cycle = 0,
-                                            .reverse_duty_cycle = 0,
-                                            .hand_brake = false};
+static keyboard_output_t current_keyboard_output = {.forward_duty_cycle = 0,
+                                                    .left_duty_cycle = 0,
+                                                    .right_duty_cycle = 0,
+                                                    .reverse_duty_cycle = 0,
+                                                    .hand_brake = false};
 
 // PWM
 TickType_t reporter_pwm_period;
 const uint32_t reporter_max_reports_before_reset_attempt = 1000;
 
-void reporter_init(TickType_t pwm_period) {
+void keyboard_task_init(TickType_t pwm_period) {
+    // Set up PWM
     reporter_pwm_period = pwm_period;
+
+    // Set up queue
     reporter_queue_handle =
-        xQueueCreateStatic(1, sizeof(reporter_report_t), queue_storage, &reporter_queue_control_block);
+        xQueueCreateStatic(1, sizeof(keyboard_output_t), queue_storage, &reporter_queue_control_block);
+
+    // Set up engine switch
+    gpio_init(ENGINE_ON_OFF_SWITCH_PIN);
+    gpio_set_dir(ENGINE_ON_OFF_SWITCH_PIN, false);
+    gpio_pull_up(ENGINE_ON_OFF_SWITCH_PIN);
 }
 
-void reporter_set_report(const reporter_report_t* command) {
+void keyboard_task_set_output(const keyboard_output_t* command) {
     xQueueOverwrite(reporter_queue_handle, command);
 }
 
-void reporter_task(void* unused) {
+static void keyboard_send_report() {}
+
+static void keyboard_task(void* unused) {
     vTaskDelay(1000);
 
     TickType_t wake_time = xTaskGetTickCount();
@@ -57,9 +70,9 @@ void reporter_task(void* unused) {
             if (elapsed > reporter_pwm_period) {
                 period_start = current_tick;
                 elapsed = 0;
-                reporter_report_t new_report;
+                keyboard_output_t new_report;
                 if (pdPASS == xQueueReceive(reporter_queue_handle, &new_report, 0)) {
-                    reporter_report = new_report;
+                    current_keyboard_output = new_report;
                 }
             }
             const float elapsed_fraction = (float)elapsed / (float)reporter_pwm_period;
@@ -68,19 +81,19 @@ void reporter_task(void* unused) {
             uint8_t key_codes[6] = {0x00};
             uint8_t key_codes_added = 0;
 
-            if (elapsed_fraction < reporter_report.forward_duty_cycle) {
+            if (elapsed_fraction < current_keyboard_output.forward_duty_cycle) {
                 key_codes[key_codes_added] = SCAN_CODE_W;
                 key_codes_added++;
             }
-            if (elapsed_fraction < reporter_report.left_duty_cycle) {
+            if (elapsed_fraction < current_keyboard_output.left_duty_cycle) {
                 key_codes[key_codes_added] = SCAN_CODE_A;
                 key_codes_added++;
             }
-            if (elapsed_fraction < reporter_report.right_duty_cycle) {
+            if (elapsed_fraction < current_keyboard_output.right_duty_cycle) {
                 key_codes[key_codes_added] = SCAN_CODE_D;
                 key_codes_added++;
             }
-            if (elapsed_fraction < reporter_report.reverse_duty_cycle) {
+            if (elapsed_fraction < current_keyboard_output.reverse_duty_cycle) {
                 key_codes[key_codes_added] = SCAN_CODE_S;
                 key_codes_added++;
             }
@@ -89,27 +102,36 @@ void reporter_task(void* unused) {
                 key_codes_added++;
             }
 
-            // TODO do not send an empty report if a single shot key has been pressed
+            // Clear report if the engine is disabled
+            if (!gpio_get(ENGINE_ON_OFF_SWITCH_PIN)) {
+                memset(key_codes, 0, 6);
+                key_codes_added = 0;
+            }
 
+            // Clear the report if it time to send a reset
             if (reporter_max_reports_before_reset_attempt <= n_reports_sent) {
                 // Every N reports send an empty one to unfuck stuck keys
                 uint8_t zeros[8] = {0};
                 tud_hid_keyboard_report(0, 0, zeros);
                 n_reports_sent = 0;
-            } else {
-                // Otherwise, send the report
-                tud_hid_keyboard_report(0, 0, key_codes);
-                n_reports_sent++;
+                memset(key_codes, 0, 6);
+                key_codes_added = 0;
             }
-        }
 
-        vTaskDelayUntil(&wake_time, reporter_interval);
+            // TODO send any single shot keys
+
+            // Send report
+            tud_hid_keyboard_report(0, 0, key_codes);
+            n_reports_sent++;
+        }
     }
+
+    vTaskDelayUntil(&wake_time, reporter_interval);
 }
 
 // Starts the reporter task.
-void reporter_start(UBaseType_t priority, TickType_t interval) {
+void keyboard_task_start(UBaseType_t priority, TickType_t interval) {
     reporter_interval = interval;
-    xTaskCreateStatic(reporter_task, "reporter Task", reporter_TASK_STACK_SIZE, NULL, priority, reporter_task_stack,
+    xTaskCreateStatic(keyboard_task, "Keyboard Task", KEYBOARD_TASK_STACK_SIZE, NULL, priority, reporter_task_stack,
                       &reporter_task_control_block);
 }

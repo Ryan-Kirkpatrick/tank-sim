@@ -45,9 +45,7 @@ uint8_t const* tud_descriptor_device_cb(void) {
 // HID Report Descriptor
 //--------------------------------------------------------------------+
 
-uint8_t const desc_hid_report[] = {
-    TUD_HID_REPORT_DESC_KEYBOARD()
-};
+uint8_t const desc_hid_report[] = {TUD_HID_REPORT_DESC_KEYBOARD()};
 
 // Invoked when received GET HID REPORT DESCRIPTOR
 // Application return pointer to descriptor
@@ -150,4 +148,26 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
     _desc_str[0] = (uint16_t)((TUSB_DESC_STRING << 8) | (2 * chr_count + 2));
 
     return _desc_str;
+}
+
+void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer,
+                           uint16_t bufsize) {
+    // we don’t need to handle this for a basic keyboard
+    (void)instance;
+    (void)report_id;
+    (void)report_type;
+    (void)buffer;
+    (void)bufsize;
+}
+
+uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t* buffer,
+                               uint16_t reqlen) {
+    // we don’t need to provide anything for basic keyboard
+    (void)instance;
+    (void)report_id;
+    (void)report_type;
+    (void)buffer;
+    (void)reqlen;
+
+    return 0;  // return zero bytes
 }

@@ -1,4 +1,4 @@
-#include "usb.h"
+#include "usb_task.h"
 #include "portmacro.h"
 #include "task.h"
 #include "tusb.h"
@@ -19,12 +19,12 @@ static void usb_task(void* unused) {
     }
 }
 
-void usb_start(UBaseType_t priority, TickType_t interval) {
+void usb_task_start(UBaseType_t priority, TickType_t interval) {
     usb_interval = interval;
     xTaskCreateStatic(usb_task, "USB Task", USB_TASK_STACK_SIZE, NULL, priority, usb_task_stack,
                       &usb_task_control_block);
 }
 
-void usb_init(void) {
+void usb_task_init(void) {
     // Nop
 }
