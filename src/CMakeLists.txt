@@ -12,6 +12,7 @@ add_executable(${NAME}
     usb_descriptors.c
     usb_task.c
     tank_assert.c
+    freertos_hooks.c
 
     ${FREERTOS_SRC}
 )

@@ -26,19 +26,8 @@
 StackType_t led_task_stack[STACK_SIZE];
 StaticTask_t led_task_handle;
 
-StackType_t usb_task_stack[STACK_SIZE];
-StaticTask_t usb_task_handle;
 
-StackType_t pot_task_stack[STACK_SIZE];
-StaticTask_t pot_task_handle;
-
-void send_key(uint8_t keycode) {
-    uint8_t report[8] = {0};  // modifiers + reserved + 6 keys
-    report[2] = keycode;      // key press
-    tud_hid_keyboard_report(0, 0, report);
-}
-
-const uint32_t max_delay = 2000;
+const uint32_t max_delay = 500;
 volatile uint32_t delay = max_delay;
 
 void led_task(void* unused) {
@@ -65,7 +54,7 @@ int main(void) {
     stdio_init_all();
 
     usb_task_init();
-    keyboard_task_init(pdMS_TO_TICKS(100));
+    keyboard_task_init(pdMS_TO_TICKS(200));
     input_task_init();
 
     keyboard_output_t report = {.forward_duty_cycle = 0.9,
@@ -76,9 +65,11 @@ int main(void) {
 
     keyboard_task_set_output(&report);
 
+    
+
     usb_task_start(1, 1);
-    keyboard_task_start(3, 15);
-    input_task_start(3, pdMS_TO_TICKS(500));
+    keyboard_task_start(4, pdMS_TO_TICKS(15));
+    // input_task_start(3, pdMS_TO_TICKS(500));
 
     xTaskCreateStatic(led_task, "", STACK_SIZE, NULL, 2, led_task_stack, &led_task_handle);
     vTaskStartScheduler();

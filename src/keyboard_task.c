@@ -3,6 +3,7 @@
 #include <hardware/gpio.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include "FreeRTOS.h"
 #include "class/hid/hid_device.h"
@@ -14,14 +15,14 @@
 #include "task.h"
 
 // Task
-#define KEYBOARD_TASK_STACK_SIZE 1024 / sizeof(StackType_t)
+#define KEYBOARD_TASK_STACK_SIZE (1024) / sizeof(StackType_t)
 static StackType_t reporter_task_stack[KEYBOARD_TASK_STACK_SIZE];
 static StaticTask_t reporter_task_control_block;
 TickType_t reporter_interval = 0;
 
 // Queue
-static QueueHandle_t reporter_queue_handle;
-static StaticQueue_t reporter_queue_control_block;
+static QueueHandle_t keyboard_queue_handle;
+static StaticQueue_t keyboard_queue_control_block;
 static uint8_t queue_storage[sizeof(keyboard_output_t)];
 
 // Report
@@ -40,8 +41,8 @@ void keyboard_task_init(TickType_t pwm_period) {
     reporter_pwm_period = pwm_period;
 
     // Set up queue
-    reporter_queue_handle =
-        xQueueCreateStatic(1, sizeof(keyboard_output_t), queue_storage, &reporter_queue_control_block);
+    keyboard_queue_handle =
+        xQueueCreateStatic(1, sizeof(keyboard_output_t), queue_storage, &keyboard_queue_control_block);
 
     // Set up engine switch
     gpio_init(ENGINE_ON_OFF_SWITCH_PIN);
@@ -50,7 +51,7 @@ void keyboard_task_init(TickType_t pwm_period) {
 }
 
 void keyboard_task_set_output(const keyboard_output_t* command) {
-    xQueueOverwrite(reporter_queue_handle, command);
+    xQueueOverwrite(keyboard_queue_handle, command);
 }
 
 static void keyboard_send_report() {}
@@ -71,7 +72,7 @@ static void keyboard_task(void* unused) {
                 period_start = current_tick;
                 elapsed = 0;
                 keyboard_output_t new_report;
-                if (pdPASS == xQueueReceive(reporter_queue_handle, &new_report, 0)) {
+                if (pdPASS == xQueueReceive(keyboard_queue_handle, &new_report, 0)) {
                     current_keyboard_output = new_report;
                 }
             }
@@ -112,7 +113,6 @@ static void keyboard_task(void* unused) {
             if (reporter_max_reports_before_reset_attempt <= n_reports_sent) {
                 // Every N reports send an empty one to unfuck stuck keys
                 uint8_t zeros[8] = {0};
-                tud_hid_keyboard_report(0, 0, zeros);
                 n_reports_sent = 0;
                 memset(key_codes, 0, 6);
                 key_codes_added = 0;
@@ -124,9 +124,9 @@ static void keyboard_task(void* unused) {
             tud_hid_keyboard_report(0, 0, key_codes);
             n_reports_sent++;
         }
+        vTaskDelayUntil(&wake_time, reporter_interval);
     }
 
-    vTaskDelayUntil(&wake_time, reporter_interval);
 }
 
 // Starts the reporter task.
