@@ -5,14 +5,15 @@ add_subdirectory(deps)
 set(NAME tank_sim_core.elf)
 
 add_executable(${NAME} 
+    control_map.c
+    freertos_hooks.c
     hx710c.c
     input_task.c
     keyboard_task.c
     main.c
+    tank_assert.c
     usb_descriptors.c
     usb_task.c
-    tank_assert.c
-    freertos_hooks.c
 
     ${FREERTOS_SRC}
 )

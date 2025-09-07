@@ -26,7 +26,6 @@
 StackType_t led_task_stack[STACK_SIZE];
 StaticTask_t led_task_handle;
 
-
 const uint32_t max_delay = 500;
 volatile uint32_t delay = max_delay;
 
@@ -53,24 +52,17 @@ int main(void) {
     // Stdio
     stdio_init_all();
 
+    // Init tasks
     usb_task_init();
-    keyboard_task_init(pdMS_TO_TICKS(200));
+    keyboard_task_init(pdMS_TO_TICKS(100));
     input_task_init();
 
-    keyboard_output_t report = {.forward_duty_cycle = 0.9,
-                                .left_duty_cycle = 0.50,
-                                .right_duty_cycle = 0.25,
-                                .reverse_duty_cycle = 0,
-                                .hand_brake = false};
-
-    keyboard_task_set_output(&report);
-
-    
-
+    // Start tasks
     usb_task_start(1, 1);
-    keyboard_task_start(4, pdMS_TO_TICKS(15));
-    // input_task_start(3, pdMS_TO_TICKS(500));
-
+    keyboard_task_start(4, pdMS_TO_TICKS(10));
+    input_task_start(3, pdMS_TO_TICKS(30));
     xTaskCreateStatic(led_task, "", STACK_SIZE, NULL, 2, led_task_stack, &led_task_handle);
+
+    // Start
     vTaskStartScheduler();
 }

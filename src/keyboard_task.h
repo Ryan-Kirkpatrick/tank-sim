@@ -4,14 +4,7 @@
 #include <stdint.h>
 #include "FreeRTOS.h"
 #include "portmacro.h"
-
-typedef struct keyboard_output {
-    float forward_duty_cycle;  // Bound between 0.0 and 1.0
-    float left_duty_cycle;     // Bound between 0.0 and 1.0
-    float right_duty_cycle;    // Bound between 0.0 and 1.0
-    float reverse_duty_cycle;  // Bound between 0.0 and 1.0
-    bool hand_brake;
-} keyboard_output_t;
+#include "control_map.h"
 
 // Init the keyboard task
 void keyboard_task_init(TickType_t pwm_period);

@@ -2,9 +2,11 @@
 #include <hardware/gpio.h>
 #include <stdbool.h>
 #include "FreeRTOS.h"
+#include "control_map.h"
 #include "hardware/adc.h"
 #include "helpers.h"
 #include "hx710c.h"
+#include "keyboard_task.h"
 #include "pico/stdlib.h"
 #include "pins.h"
 #include "portmacro.h"
@@ -37,49 +39,26 @@ typedef struct input_raw_report {
     int32_t right_tiller;
 } input_raw_report_t;
 
-const char* input_gear_to_str(input_gear_t gear) {
-    switch (gear) {
-        case INPUT_FORWARDS:
-            return "INPUT_FORWARDS";
-        case INPUT_REVERSE:
-            return "INPUT_REVERSE";
-    }
-    TANK_ASSERT_M(false, "Unexpected input_gear_t");
-    return "";
-}
-
-void input_report_print(const input_report_t* report) {
-    printf("{\r\n");
-    printf("  \"left_tiller\": %f,\r\n", report->left_tiller);
-    printf("  \"right_tiller\": %f,\r\n", report->right_tiller);
-    printf("  \"accelerator\": %f,\r\n", report->accelerator);
-    printf("  \"gear\": %s\r\n", input_gear_to_str(report->gear));
-    printf("}\r\n");
-}
-
-static input_raw_report_t input_task_read_sensors(void) {
-    input_raw_report_t report = {0};
-
+static void input_task_update_sensor_values(input_raw_report_t* sensor_values) {
     // Read force sensors
-    uint32_t conversions[2] = {0};
+    int32_t conversions[2] = {0};
     vTaskSuspendAll();
     bool conversion_ready = hx710c_read(&input_force_sensors, conversions);
     xTaskResumeAll();
     if (!conversion_ready) {
         printf("Force sensor conversion was not ready.\r\n");
+    } else {
+        sensor_values->left_tiller = conversions[0];
+        sensor_values->right_tiller = conversions[1];
     }
-    report.left_tiller = conversions[0];
-    report.right_tiller = conversions[1];
 
     // Read pedals
     adc_select_input(PIN_TO_ADC(ACCELERATOR_PEDAL_PIN));
-    report.accelerator = adc_read();
+    sensor_values->accelerator = adc_read();
     adc_select_input(PIN_TO_ADC(BRAKE_PEDAL_PIN));
-    report.brake = adc_read();
+    sensor_values->brake = adc_read();
     adc_select_input(PIN_TO_ADC(CLUTCH_PEDAL_PIN));
-    report.clutch = adc_read();
-
-    return report;
+    sensor_values->clutch = adc_read();
 }
 
 static bool input_calibration_mode_enabled(void) {
@@ -168,7 +147,7 @@ static void input_task(void* unused) {
     hx710c_init(&input_force_sensors, TILLER_SCL_PIN, force_sensor_sda_pins, 2);
     xTaskResumeAll();
 
-    const input_raw_report_t default_report = {
+    input_raw_report_t current_report = {
         .accelerator = INPUT_RAW_PEDAL_ABSOLUTE_MAX,  //
         .brake = INPUT_RAW_PEDAL_ABSOLUTE_MAX,        //
         .clutch = INPUT_RAW_PEDAL_ABSOLUTE_MAX,       //
@@ -194,15 +173,24 @@ static void input_task(void* unused) {
         .right_tiller = INPUT_RAW_TILLER_ABSOLUTE_MIN  //
     };
 
+    // Config
+    input_output_map_config_t map_config = {.pedal_deadzone = 0.1,
+                                            .tiller_deadzone = 0.07,
+                                            .tiller_handbrake_threshold_begin = 0.8,
+                                            .tiller_handbrake_threshold_end = 0.9,
+                                            .tiller_max_turn_threshold = 0.65};
+
     while (1) {
         // Read sensors
-        input_raw_report_t current_report = input_task_read_sensors();
+        input_task_update_sensor_values(&current_report);
 
+        // Process sensor data
         if (input_calibration_mode_enabled()) {
             input_calibrate(&current_report, &calibration_min, &calibration_max);
         } else {
-            input_report_t final_report = input_make_report(&current_report, &calibration_min, &calibration_max);
-            input_report_print(&final_report);
+            input_report_t input = input_make_report(&current_report, &calibration_min, &calibration_max);
+            keyboard_output_t output = map_input_to_output(&map_config, &input);
+            keyboard_task_set_output(&output);
         }
 
         vTaskDelayUntil(&wake_time, input_interval);

@@ -18,7 +18,7 @@
 #define KEYBOARD_TASK_STACK_SIZE (1024) / sizeof(StackType_t)
 static StackType_t reporter_task_stack[KEYBOARD_TASK_STACK_SIZE];
 static StaticTask_t reporter_task_control_block;
-TickType_t reporter_interval = 0;
+TickType_t keyboard_interval = 0;
 
 // Queue
 static QueueHandle_t keyboard_queue_handle;
@@ -26,11 +26,11 @@ static StaticQueue_t keyboard_queue_control_block;
 static uint8_t queue_storage[sizeof(keyboard_output_t)];
 
 // Report
-static keyboard_output_t current_keyboard_output = {.forward_duty_cycle = 0,
-                                                    .left_duty_cycle = 0,
-                                                    .right_duty_cycle = 0,
-                                                    .reverse_duty_cycle = 0,
-                                                    .hand_brake = false};
+static keyboard_output_t current_keyboard_output = {.forward_duty_cycle = 0.0,
+                                                    .left_duty_cycle = 0.0,
+                                                    .right_duty_cycle = 0.0,
+                                                    .reverse_duty_cycle = 0.0,
+                                                    .hand_brake_duty_cycle = 0.0};
 
 // PWM
 TickType_t reporter_pwm_period;
@@ -98,7 +98,7 @@ static void keyboard_task(void* unused) {
                 key_codes[key_codes_added] = SCAN_CODE_S;
                 key_codes_added++;
             }
-            if (true) {
+            if (elapsed_fraction < current_keyboard_output.hand_brake_duty_cycle) {
                 key_codes[key_codes_added] = SCAN_CODE_SPACEBAR;
                 key_codes_added++;
             }
@@ -124,14 +124,13 @@ static void keyboard_task(void* unused) {
             tud_hid_keyboard_report(0, 0, key_codes);
             n_reports_sent++;
         }
-        vTaskDelayUntil(&wake_time, reporter_interval);
+        vTaskDelayUntil(&wake_time, keyboard_interval);
     }
-
 }
 
 // Starts the reporter task.
 void keyboard_task_start(UBaseType_t priority, TickType_t interval) {
-    reporter_interval = interval;
+    keyboard_interval = interval;
     xTaskCreateStatic(keyboard_task, "Keyboard Task", KEYBOARD_TASK_STACK_SIZE, NULL, priority, reporter_task_stack,
                       &reporter_task_control_block);
 }
