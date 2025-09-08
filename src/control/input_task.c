@@ -1,19 +1,26 @@
 #include "input_task.h"
+
 #include <hardware/gpio.h>
+#include <pico/stdlib.h>
 #include <stdbool.h>
+#include <stdint.h>
+
 #include "FreeRTOS.h"
+#include "config/config.h"
 #include "control_map.h"
 #include "hardware/adc.h"
-#include "helpers.h"
 #include "hx710c.h"
-#include "keyboard_task.h"
-#include "pico/stdlib.h"
 #include "pins.h"
-#include "portmacro.h"
 #include "projdefs.h"
-#include "stdio.h"
-#include "tank_assert.h"
 #include "task.h"
+#include "terminal/terminal.h"
+#include "usb_keyboard/keyboard_task.h"
+#include "usb_keyboard/types.h"
+#include "util/helpers.h"
+#include "util/tank_assert.h"
+
+// Logging
+static const char* const input_log_tag = "INPUT";
 
 // Stack info
 #define INPUT_TASK_STACK_SIZE 4096 / sizeof(StackType_t)
@@ -24,29 +31,37 @@ static StaticTask_t input_task_control_block;
 static TickType_t input_interval = 0;
 static hx710c_t input_force_sensors;
 
-// Raw input
-#define INPUT_RAW_PEDAL_ABSOLUTE_MIN ((uint16_t)0)
-#define INPUT_RAW_PEDAL_ABSOLUTE_MAX ((uint16_t)4095)
+// Calibration
+const control_raw_report_t control_default_calibration_min = {
+    //The minimum values found in the calibration step
+    .accelerator = INPUT_RAW_PEDAL_ABSOLUTE_MAX,  //
+    .brake = INPUT_RAW_PEDAL_ABSOLUTE_MAX,        //
+    .clutch = INPUT_RAW_PEDAL_ABSOLUTE_MAX,       //
+    .left_tiller = INT16_MAX,                     //
+    .right_tiller = INT16_MAX                     //
+};
 
-#define INPUT_RAW_TILLER_ABSOLUTE_MIN ((int32_t)-8388608)
-#define INPUT_RAW_TILLER_ABSOLUTE_MAX ((int32_t)8388607)
+const control_raw_report_t control_default_calibration_max = {
+    // The maximum values found in the calibration step
+    .accelerator = INPUT_RAW_PEDAL_ABSOLUTE_MIN,  //
+    .brake = INPUT_RAW_PEDAL_ABSOLUTE_MIN,        //
+    .clutch = INPUT_RAW_PEDAL_ABSOLUTE_MIN,       //
+    .left_tiller = INT16_MIN,                     //
+    .right_tiller = INT16_MIN                     //
+};
 
-typedef struct input_raw_report {
-    int16_t accelerator;
-    int16_t brake;
-    int16_t clutch;
-    int32_t left_tiller;
-    int32_t right_tiller;
-} input_raw_report_t;
+// Returns true if all sensors have bene successfully read
+static bool input_task_update_sensor_values(control_raw_report_t* sensor_values) {
+    bool result = true;
 
-static void input_task_update_sensor_values(input_raw_report_t* sensor_values) {
     // Read force sensors
     int32_t conversions[2] = {0};
     vTaskSuspendAll();
     bool conversion_ready = hx710c_read(&input_force_sensors, conversions);
     xTaskResumeAll();
     if (!conversion_ready) {
-        printf("Force sensor conversion was not ready.\r\n");
+        LOG_W(input_log_tag, "Force sensor conversion was not ready.");
+        result = false;
     } else {
         sensor_values->left_tiller = conversions[0];
         sensor_values->right_tiller = conversions[1];
@@ -59,13 +74,21 @@ static void input_task_update_sensor_values(input_raw_report_t* sensor_values) {
     sensor_values->brake = adc_read();
     adc_select_input(PIN_TO_ADC(CLUTCH_PEDAL_PIN));
     sensor_values->clutch = adc_read();
+
+    return result;
 }
 
-static bool input_calibration_mode_enabled(void) {
+static bool input_calibration_mode_enabled(bool* out_exited_calibration_mode, bool* out_entered_calibration_mode) {
     static bool enabled = false;
     static bool enabled_last_call = false;
     static TickType_t last_read = 0;
     const static TickType_t minimum_read_interval = pdMS_TO_TICKS(200);  // For debouncing
+    if (NULL != out_exited_calibration_mode) {
+        *out_exited_calibration_mode = false;
+    }
+    if (NULL != out_entered_calibration_mode) {
+        *out_entered_calibration_mode = false;
+    }
 
     // Do not read more often than the minimum interval
     TickType_t current_tick = xTaskGetTickCount();
@@ -78,10 +101,16 @@ static bool input_calibration_mode_enabled(void) {
 
     // Log
     if (enabled && !enabled_last_call) {
-        printf("Entering calibration mode.\r\n");
+        LOG_I(input_log_tag, "Entering calibration mode.");
+        if (NULL != out_entered_calibration_mode) {
+            *out_entered_calibration_mode = true;
+        }
     }
     if (!enabled && enabled_last_call) {
-        printf("Leaving calibration mode.\r\n");
+        LOG_I(input_log_tag, "Leaving calibration mode.");
+        if (NULL != out_exited_calibration_mode) {
+            *out_exited_calibration_mode = true;
+        }
     }
 
     enabled_last_call = enabled;
@@ -89,7 +118,7 @@ static bool input_calibration_mode_enabled(void) {
 }
 
 // Updates max and min based off the current sensor reading
-static void input_calibrate(const input_raw_report_t* current, input_raw_report_t* min, input_raw_report_t* max) {
+static void input_calibrate(const control_raw_report_t* current, control_raw_report_t* min, control_raw_report_t* max) {
     // Update min
     min->accelerator = MIN_OF(min->accelerator, current->accelerator);
     min->brake = MIN_OF(min->brake, current->brake);
@@ -118,8 +147,9 @@ static float input_scale_to_0_1(float current_raw, float min_raw, float max_raw)
     return value;
 }
 
-static input_report_t input_make_report(const input_raw_report_t* current, const input_raw_report_t* calibration_min,
-                                        const input_raw_report_t* calibration_max) {
+static input_report_t input_make_report(const control_raw_report_t* current,
+                                        const control_raw_report_t* calibration_min,
+                                        const control_raw_report_t* calibration_max) {
     input_report_t report = {
         // High raw accelerator values indicate that the accelerator is not depressed
         .accelerator =
@@ -147,50 +177,68 @@ static void input_task(void* unused) {
     hx710c_init(&input_force_sensors, TILLER_SCL_PIN, force_sensor_sda_pins, 2);
     xTaskResumeAll();
 
-    input_raw_report_t current_report = {
+    control_raw_report_t calibration_min = control_default_calibration_min;
+    control_raw_report_t calibration_max = control_default_calibration_max;
+    // Control settings
+    control_settings_t control_settings = {.pedal_deadzone = 0.07,
+                                           .tiller_deadzone = 0.07,
+                                           .tiller_handbrake_threshold_begin = 0.8,
+                                           .tiller_handbrake_threshold_end = 0.9,
+                                           .tiller_max_turn_threshold = 0.65};
+
+    // Read from config
+    config_get_calibration(&calibration_min, &calibration_max);
+    config_get_control_settings(&control_settings);
+
+    // Init current report
+    control_raw_report_t current_report = {
         .accelerator = INPUT_RAW_PEDAL_ABSOLUTE_MAX,  //
         .brake = INPUT_RAW_PEDAL_ABSOLUTE_MAX,        //
         .clutch = INPUT_RAW_PEDAL_ABSOLUTE_MAX,       //
         .left_tiller = 0,                             //
         .right_tiller = 0                             //
     };
-
-    input_raw_report_t calibration_min = {
-        //The minimum values found in the calibration step
-        .accelerator = INPUT_RAW_PEDAL_ABSOLUTE_MAX,   //
-        .brake = INPUT_RAW_PEDAL_ABSOLUTE_MAX,         //
-        .clutch = INPUT_RAW_PEDAL_ABSOLUTE_MAX,        //
-        .left_tiller = INPUT_RAW_TILLER_ABSOLUTE_MAX,  //
-        .right_tiller = INPUT_RAW_TILLER_ABSOLUTE_MAX  //
-    };
-
-    input_raw_report_t calibration_max = {
-        // The maximum values found in the calibration step
-        .accelerator = INPUT_RAW_PEDAL_ABSOLUTE_MIN,   //
-        .brake = INPUT_RAW_PEDAL_ABSOLUTE_MIN,         //
-        .clutch = INPUT_RAW_PEDAL_ABSOLUTE_MIN,        //
-        .left_tiller = INPUT_RAW_TILLER_ABSOLUTE_MIN,  //
-        .right_tiller = INPUT_RAW_TILLER_ABSOLUTE_MIN  //
-    };
-
-    // Config
-    input_output_map_config_t map_config = {.pedal_deadzone = 0.1,
-                                            .tiller_deadzone = 0.07,
-                                            .tiller_handbrake_threshold_begin = 0.8,
-                                            .tiller_handbrake_threshold_end = 0.9,
-                                            .tiller_max_turn_threshold = 0.65};
+    while (!input_task_update_sensor_values(&current_report)) {
+        // NOP
+    }
 
     while (1) {
         // Read sensors
         input_task_update_sensor_values(&current_report);
 
         // Process sensor data
-        if (input_calibration_mode_enabled()) {
+        bool save_calibration_data = false;
+        bool reset_calibration_data = false;
+        if (input_calibration_mode_enabled(&save_calibration_data, &reset_calibration_data)) {
+            if (reset_calibration_data) {
+                LOG_D(input_log_tag, "Reset calibration data.");
+                control_raw_report_t calibration_min = control_default_calibration_min;
+                control_raw_report_t calibration_max = control_default_calibration_max;
+            }
+            keyboard_output_t nil_output = {0};
+            keyboard_task_set_output(&nil_output);
             input_calibrate(&current_report, &calibration_min, &calibration_max);
         } else {
             input_report_t input = input_make_report(&current_report, &calibration_min, &calibration_max);
-            keyboard_output_t output = map_input_to_output(&map_config, &input);
+            keyboard_output_t output = map_input_to_output(&control_settings, &input);
             keyboard_task_set_output(&output);
+        }
+
+        // Save calibration data
+        if (save_calibration_data) {
+            config_set_calibration(&calibration_min, &calibration_max);
+            LOG_D(input_log_tag, "Calibration minimums:");
+            LOG_D(input_log_tag, "  accelerator: %d", calibration_min.accelerator);
+            LOG_D(input_log_tag, "  left_tiller: %d", calibration_min.left_tiller);
+            LOG_D(input_log_tag, "  right_tiller: %d", calibration_min.right_tiller);
+            LOG_D(input_log_tag, "Calibration maximums:");
+            LOG_D(input_log_tag, "  accelerator: %d", calibration_max.accelerator);
+            LOG_D(input_log_tag, "  left_tiller: %d", calibration_max.left_tiller);
+            LOG_D(input_log_tag, "  right_tiller: %d", calibration_max.right_tiller);
+            LOG_D(input_log_tag, "Current reading:");
+            LOG_D(input_log_tag, "  accelerator: %d", current_report.accelerator);
+            LOG_D(input_log_tag, "  left_tiller: %d", current_report.left_tiller);
+            LOG_D(input_log_tag, "  right_tiller: %d", current_report.right_tiller);
         }
 
         vTaskDelayUntil(&wake_time, input_interval);

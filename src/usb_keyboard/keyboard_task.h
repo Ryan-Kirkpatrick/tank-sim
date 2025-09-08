@@ -2,9 +2,10 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+
 #include "FreeRTOS.h"
 #include "portmacro.h"
-#include "control_map.h"
+#include "types.h"
 
 // Init the keyboard task
 void keyboard_task_init(TickType_t pwm_period);

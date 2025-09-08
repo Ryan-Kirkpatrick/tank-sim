@@ -1,10 +1,12 @@
 #pragma once
 
-// LEDS
+#include <hardware/flash.h>
 #include <stdint.h>
 #include <stdio.h>
-#include "tank_assert.h"
 
+#include "util/tank_assert.h"
+
+// LEDS
 #define LED_PIN 25
 
 // Potentiometer
@@ -39,3 +41,7 @@ static inline uint8_t _PIN_TO_ADC(uint8_t pin) {
     TANK_ASSERT(adc < 3);
     return adc;
 }
+
+// flash
+#define FLASH_LAST_SECTOR_SIZE FLASH_SECTOR_SIZE
+#define FLASH_LAST_SECTOR_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)

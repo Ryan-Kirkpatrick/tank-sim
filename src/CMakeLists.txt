@@ -5,21 +5,29 @@ add_subdirectory(deps)
 set(NAME tank_sim_core.elf)
 
 add_executable(${NAME} 
-    control_map.c
     freertos_hooks.c
-    hx710c.c
-    input_task.c
-    keyboard_task.c
     main.c
-    tank_assert.c
-    usb_descriptors.c
-    usb_task.c
+
+    config/config.c
+
+    control/control_map.c
+    control/hx710c.c
+    control/input_task.c
+
+    terminal/terminal.c
+
+    usb_keyboard/keyboard_task.c
+    usb_keyboard/usb_descriptors.c
+    usb_keyboard/usb_task.c
+
+    util/tank_assert.c
 
     ${FREERTOS_SRC}
 )
 
 target_include_directories(${NAME} 
     PUBLIC
+        ${CMAKE_CURRENT_LIST_DIR}
         ${FREERTOS_INC}
         ${TINYUSB_INC}
 )
@@ -28,6 +36,7 @@ target_link_libraries(${NAME}
     PUBLIC 
         hardware_adc
         hardware_exception
+        hardware_flash
         pico_stdlib
         pico_unique_id 
         tinyusb_board

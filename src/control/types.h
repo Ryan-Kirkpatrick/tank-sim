@@ -1,27 +1,22 @@
 #pragma once
 
-#include <stdbool.h>
 #include <stdint.h>
 
-typedef enum input_gear {
-    INPUT_FORWARDS,
-    INPUT_REVERSE,
-} input_gear_t;
+// Raw input
+#define INPUT_RAW_PEDAL_ABSOLUTE_MIN ((uint16_t)0)
+#define INPUT_RAW_PEDAL_ABSOLUTE_MAX ((uint16_t)4095)
 
-typedef struct input_report {
-    float left_tiller;   // Bound between 0.0 and 1.0
-    float right_tiller;  // Bound between 0.0 and 1.0
-    float accelerator;   // Bound between 0.0 and 1.0
-    input_gear_t gear;
-} input_report_t;
+// TODO verify tiller min and max values
+#define INPUT_RAW_TILLER_ABSOLUTE_MIN ((int32_t)-8388608)
+#define INPUT_RAW_TILLER_ABSOLUTE_MAX ((int32_t)8388607)
 
-typedef struct keyboard_output {
-    float forward_duty_cycle;     // Bound between 0.0 and 1.0
-    float left_duty_cycle;        // Bound between 0.0 and 1.0
-    float right_duty_cycle;       // Bound between 0.0 and 1.0
-    float reverse_duty_cycle;     // Bound between 0.0 and 1.0
-    float hand_brake_duty_cycle;  // Bound between 0.0 and 1.0
-} keyboard_output_t;
+typedef struct input_raw_report {
+    int16_t accelerator;   // Bound between INPUT_RAW_PEDAL_ABSOLUTE_MIN / MAX
+    int16_t brake;         // Bound between INPUT_RAW_PEDAL_ABSOLUTE_MIN / MAX
+    int16_t clutch;        // Bound between INPUT_RAW_PEDAL_ABSOLUTE_MIN / MAX
+    int32_t left_tiller;   // Bound between INPUT_RAW_TILLER_ABSOLUTE_MIN / MAX
+    int32_t right_tiller;  // Bound between INPUT_RAW_TILLER_ABSOLUTE_MIN / MAX
+} control_raw_report_t;
 
 typedef struct input_output_map_config {
     // =========================================================================
@@ -48,10 +43,4 @@ typedef struct input_output_map_config {
     float tiller_handbrake_threshold_begin;
     float tiller_handbrake_threshold_end;
 
-} input_output_map_config_t;
-
-const char* input_gear_to_str(input_gear_t gear);
-
-void input_report_print(const input_report_t* report);
-
-keyboard_output_t map_input_to_output(const input_output_map_config_t* config, const input_report_t* input);
+} control_settings_t;

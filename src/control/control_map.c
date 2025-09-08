@@ -1,8 +1,8 @@
 #include "control_map.h"
 
 #include <stdio.h>
-#include "helpers.h"
-#include "tank_assert.h"
+#include "util/helpers.h"
+#include "util/tank_assert.h"
 
 const char* input_gear_to_str(input_gear_t gear) {
     switch (gear) {
@@ -29,7 +29,7 @@ typedef struct tiller_output {
     float handbrake_pwm;
 } tiller_output_t;
 
-tiller_output_t map_tiller_input_to_output(const input_output_map_config_t* config, const float tiller_input) {
+tiller_output_t map_tiller_input_to_output(const control_settings_t* config, const float tiller_input) {
     tiller_output_t output = {.side_pwm = 0.0, .handbrake_pwm = 0.0};
 
     // Apply deadzone
@@ -57,7 +57,7 @@ typedef struct pedal_output {
     float pwm;
 } pedal_output_t;
 
-pedal_output_t map_pedal_input_to_output(const input_output_map_config_t* config, const float pedal_input) {
+pedal_output_t map_pedal_input_to_output(const control_settings_t* config, const float pedal_input) {
     pedal_output_t output = {.pwm = 0.0};
 
     // Apply dead zone
@@ -72,7 +72,7 @@ pedal_output_t map_pedal_input_to_output(const input_output_map_config_t* config
     return output;
 }
 
-keyboard_output_t map_input_to_output(const input_output_map_config_t* config, const input_report_t* input) {
+keyboard_output_t map_input_to_output(const control_settings_t* config, const input_report_t* input) {
     const pedal_output_t accelerator = map_pedal_input_to_output(config, input->accelerator);
     const tiller_output_t left_tiller = map_tiller_input_to_output(config, input->left_tiller);
     const tiller_output_t right_tiller = map_tiller_input_to_output(config, input->right_tiller);
@@ -81,7 +81,7 @@ keyboard_output_t map_input_to_output(const input_output_map_config_t* config, c
     keyboard_output_t output = {.forward_duty_cycle = accelerator.pwm,
                                 .left_duty_cycle = left_tiller.side_pwm,
                                 .right_duty_cycle = right_tiller.side_pwm,
-                                .hand_brake_duty_cycle = MAX_OF(left_tiller.handbrake_pwm, right_tiller.side_pwm)};
+                                .hand_brake_duty_cycle = MAX_OF(left_tiller.handbrake_pwm, right_tiller.handbrake_pwm)};
 
     return output;
 }

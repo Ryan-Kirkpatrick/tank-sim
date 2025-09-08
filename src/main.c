@@ -2,24 +2,20 @@
 #include <hardware/structs/io_bank0.h>
 #include <hardware/uart.h>
 #include <pico/stdio.h>
+#include <pico/stdlib.h>
 #include <pico/time.h>
 #include <stdint.h>
 #include <stdio.h>
+
 #include "FreeRTOS.h"
-#include "class/hid/hid_device.h"
-#include "device/usbd.h"
-#include "hardware/adc.h"
-#include "hardware/exception.h"
-#include "hx710c.h"
-#include "input_task.h"
-#include "keyboard_task.h"
-#include "pico/stdlib.h"
+#include "config/config.h"
+#include "control/input_task.h"
 #include "pins.h"
-#include "portmacro.h"
 #include "projdefs.h"
 #include "task.h"
-#include "tusb.h"
-#include "usb_task.h"
+#include "terminal/terminal.h"
+#include "usb_keyboard/keyboard_task.h"
+#include "usb_keyboard/usb_task.h"
 
 #define STACK_SIZE 1024 * 8
 
@@ -53,12 +49,17 @@ int main(void) {
     stdio_init_all();
 
     // Init tasks
+    terminal_task_init();
     usb_task_init();
     keyboard_task_init(pdMS_TO_TICKS(100));
     input_task_init();
 
+    // Config
+    config_init();
+
     // Start tasks
-    usb_task_start(1, 1);
+    terminal_task_start(1, 1);
+    usb_task_start(2, 1);
     keyboard_task_start(4, pdMS_TO_TICKS(10));
     input_task_start(3, pdMS_TO_TICKS(30));
     xTaskCreateStatic(led_task, "", STACK_SIZE, NULL, 2, led_task_stack, &led_task_handle);

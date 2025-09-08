@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
 #include "FreeRTOS.h"
 #include "class/hid/hid_device.h"
 #include "pins.h"
@@ -77,28 +78,35 @@ static void keyboard_task(void* unused) {
                 }
             }
             const float elapsed_fraction = (float)elapsed / (float)reporter_pwm_period;
+            TANK_ASSERT_M(elapsed_fraction <= 1.0 && elapsed_fraction >= 0.0, "elapsed_fraction = %f",
+                          elapsed_fraction);
 
             // Create HID report
             uint8_t key_codes[6] = {0x00};
             uint8_t key_codes_added = 0;
 
-            if (elapsed_fraction < current_keyboard_output.forward_duty_cycle) {
+            if (elapsed_fraction <= current_keyboard_output.forward_duty_cycle &&
+                current_keyboard_output.forward_duty_cycle != 0.0) {
                 key_codes[key_codes_added] = SCAN_CODE_W;
                 key_codes_added++;
             }
-            if (elapsed_fraction < current_keyboard_output.left_duty_cycle) {
+            if (elapsed_fraction <= current_keyboard_output.left_duty_cycle &&
+                current_keyboard_output.left_duty_cycle != 0.0) {
                 key_codes[key_codes_added] = SCAN_CODE_A;
                 key_codes_added++;
             }
-            if (elapsed_fraction < current_keyboard_output.right_duty_cycle) {
+            if (elapsed_fraction <= current_keyboard_output.right_duty_cycle &&
+                current_keyboard_output.right_duty_cycle != 0.0) {
                 key_codes[key_codes_added] = SCAN_CODE_D;
                 key_codes_added++;
             }
-            if (elapsed_fraction < current_keyboard_output.reverse_duty_cycle) {
+            if (elapsed_fraction <= current_keyboard_output.reverse_duty_cycle &&
+                current_keyboard_output.reverse_duty_cycle != 0.0) {
                 key_codes[key_codes_added] = SCAN_CODE_S;
                 key_codes_added++;
             }
-            if (elapsed_fraction < current_keyboard_output.hand_brake_duty_cycle) {
+            if (elapsed_fraction <= current_keyboard_output.hand_brake_duty_cycle &&
+                current_keyboard_output.hand_brake_duty_cycle != 0.0) {
                 key_codes[key_codes_added] = SCAN_CODE_SPACEBAR;
                 key_codes_added++;
             }
@@ -109,14 +117,14 @@ static void keyboard_task(void* unused) {
                 key_codes_added = 0;
             }
 
-            // Clear the report if it time to send a reset
-            if (reporter_max_reports_before_reset_attempt <= n_reports_sent) {
-                // Every N reports send an empty one to unfuck stuck keys
-                uint8_t zeros[8] = {0};
-                n_reports_sent = 0;
-                memset(key_codes, 0, 6);
-                key_codes_added = 0;
-            }
+            // // Clear the report if it time to send a reset
+            // if (reporter_max_reports_before_reset_attempt <= n_reports_sent) {
+            //     // Every N reports send an empty one to unfuck stuck keys
+            //     uint8_t zeros[8] = {0};
+            //     n_reports_sent = 0;
+            //     memset(key_codes, 0, 6);
+            //     key_codes_added = 0;
+            // }
 
             // TODO send any single shot keys
 

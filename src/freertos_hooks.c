@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "FreeRTOS.h"
-#include "tank_assert.h"
+#include "util/tank_assert.h"
 #include "task.h"
 
 #define STACK_OVERFLOW_MSG "Stack overflow in "
