@@ -7,6 +7,7 @@
 
 #include "FreeRTOS.h"
 #include "config/config.h"
+#include "control/types.h"
 #include "control_map.h"
 #include "hardware/adc.h"
 #include "hx710c.h"
@@ -34,20 +35,20 @@ static hx710c_t input_force_sensors;
 // Calibration
 const control_raw_report_t control_default_calibration_min = {
     //The minimum values found in the calibration step
-    .accelerator = INPUT_RAW_PEDAL_ABSOLUTE_MAX,  //
-    .brake = INPUT_RAW_PEDAL_ABSOLUTE_MAX,        //
-    .clutch = INPUT_RAW_PEDAL_ABSOLUTE_MAX,       //
-    .left_tiller = INT16_MAX,                     //
-    .right_tiller = INT16_MAX                     //
+    .accelerator = INPUT_RAW_PEDAL_ABSOLUTE_MAX,   //
+    .brake = INPUT_RAW_PEDAL_ABSOLUTE_MAX,         //
+    .clutch = INPUT_RAW_PEDAL_ABSOLUTE_MAX,        //
+    .left_tiller = INPUT_RAW_TILLER_ABSOLUTE_MAX,  //
+    .right_tiller = INPUT_RAW_TILLER_ABSOLUTE_MAX  //
 };
 
 const control_raw_report_t control_default_calibration_max = {
     // The maximum values found in the calibration step
-    .accelerator = INPUT_RAW_PEDAL_ABSOLUTE_MIN,  //
-    .brake = INPUT_RAW_PEDAL_ABSOLUTE_MIN,        //
-    .clutch = INPUT_RAW_PEDAL_ABSOLUTE_MIN,       //
-    .left_tiller = INT16_MIN,                     //
-    .right_tiller = INT16_MIN                     //
+    .accelerator = INPUT_RAW_PEDAL_ABSOLUTE_MIN,   //
+    .brake = INPUT_RAW_PEDAL_ABSOLUTE_MIN,         //
+    .clutch = INPUT_RAW_PEDAL_ABSOLUTE_MIN,        //
+    .left_tiller = INPUT_RAW_TILLER_ABSOLUTE_MIN,  //
+    .right_tiller = INPUT_RAW_TILLER_ABSOLUTE_MIN  //
 };
 
 // Returns true if all sensors have bene successfully read
@@ -177,8 +178,10 @@ static void input_task(void* unused) {
     hx710c_init(&input_force_sensors, TILLER_SCL_PIN, force_sensor_sda_pins, 2);
     xTaskResumeAll();
 
+    // Calibration
     control_raw_report_t calibration_min = control_default_calibration_min;
     control_raw_report_t calibration_max = control_default_calibration_max;
+
     // Control settings
     control_settings_t control_settings = {.pedal_deadzone = 0.07,
                                            .tiller_deadzone = 0.07,
@@ -187,7 +190,7 @@ static void input_task(void* unused) {
                                            .tiller_max_turn_threshold = 0.65};
 
     // Read from config
-    config_get_calibration(&calibration_min, &calibration_max);
+    // config_get_calibration(&calibration_min, &calibration_max);
     config_get_control_settings(&control_settings);
 
     // Init current report
